@@ -21,7 +21,9 @@ export class ProcessRunner {
     async run(command : string, args : Array<string>, cwd : string, processStdoutLine : (line : string) => void, processStderrLine : (line : string) => void, processClose : () => void) {
         let origpath = process.env["PATH"];
         let newenv = Object.assign({}, process.env, this.config.env);
-        newenv["PATH"] = origpath + ":" + this.config.env;
+        console.log('config', this.config);
+        newenv["PATH"] = origpath + ":" + this.config.env["PATH"];
+        console.log("path", newenv["PATH"]);
         newenv["PYTHONUNBUFFERED"] = "1";
 
         const stdoutReceiver = new StringBufAccumulator();

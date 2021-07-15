@@ -1,15 +1,21 @@
 import * as vscode from 'vscode';
-import { PossibleTestStates, TestStatesEvents } from './testtypes';
+import { PossibleTestStates, TestAccum, TestStatesEvents } from './testtypes';
 import { ExtensionConfiguration } from './config';
 import { ProcessRunner } from './processrunner';
+import { suiteFromAccums, testIds } from './testtypes';
+
+const failuresRegex = /[=]+ FAILURES [=]+/;
+const testNameRegex = /[_]+ ([^ ]+) [_]+/;
+const summaryRegex = /[=]+ short test summary info [=]+/;
+const fileAndLineRegex = /([^"]+):([0-9]+): (.*)/;
 
 export class ChialispTestRun {
-	allTests : Array<string>;
+	allTests : Array<TestAccum> = [];
 	testPath : vscode.WorkspaceFolder;
 	runningProcess : undefined | ProcessRunner;
 
-	constructor(td : vscode.WorkspaceFolder, allTests : Array<string>) {
-		this.allTests = allTests;
+	constructor(td : vscode.WorkspaceFolder, tests : Array<TestAccum>) {
+        this.allTests = tests;
 		this.testPath = td;
 	}
 
@@ -19,27 +25,54 @@ export class ChialispTestRun {
 		}
 	}
 
+    findTestIdInAccum(name : string, prefix : string, accum : TestAccum) : string | null {
+        if (prefix + accum.name === name) {
+            return accum.id.toString();
+        }
+        if (accum.kind === 'Class') {
+            prefix = prefix + accum.name + '.';
+        }
+        for (var i = 0; i < accum.children.length; i++) {
+            let ta = accum.children[i];
+            const resultInTestSet = this.findTestIdInAccum(name, prefix, ta);
+            if (resultInTestSet) {
+                return resultInTestSet;
+            }
+        }
+        return null;
+    }
+
+    findTestId(name : string) : string | null {
+        for (var i = 0; i < this.allTests.length; i++) {
+            let ta = this.allTests[i];
+            const resultInTestSet = this.findTestIdInAccum(name, "", ta);
+            if (resultInTestSet) {
+                return resultInTestSet;
+            }
+        }
+        return null;
+    }
+
 	async run(config : ExtensionConfiguration, tests : Array<string>, emitState : (event : TestStatesEvents) => void) {
         let testSummary = '';
         let failureNumbers : Array<number> = [];
         let testName = '';
         let testFailedAtFile = '';
         let testFailedAtLine = -1;
-        const matchFileAndLine = /File "([^"]+)", line ([0-9]+).*/;
 
-        // Accumulate test output
         let testOutput : Array<string> = [];
+
+        let suite = suiteFromAccums(this.allTests);
 
         emitState({
             "type": "suite",
-            "suite": tests[0],
+            "suite": <any>suite,
             "state": "running"
         });
 
         // We'll knock out failures since we have their names
         const passingTests : any = {};
-
-        this.allTests.map((t) => {
+        testIds(this.allTests).map((t) => {
             passingTests[t] = true;
             emitState({
                 "type": "test",
@@ -49,71 +82,69 @@ export class ChialispTestRun {
         });
 
         let testState : PossibleTestStates = 'unknown';
-
         let wsfolder = this.testPath.uri.fsPath;
         const p = new ProcessRunner(config);
 
         this.runningProcess = p;
+        const finishTest = () => {
+            if (testOutput.length > 0) {
+                const f = testOutput[testOutput.length - 1].match(fileAndLineRegex);
+                if (f) {
+                    testFailedAtFile = f[1];
+                    testFailedAtLine = parseInt(f[2]);
+                }                
+            }
+            const finalId = this.findTestId(testName);
+            if (finalId) {
+                emitState({
+                    "type": "test",
+                    "state": "failed",
+                    "file": testFailedAtFile,
+                    "line": testFailedAtLine,
+                    "message": testOutput.join("\n"),
+                    "test": finalId,
+                });
+                passingTests[finalId] = false;
+            }
+        };
+
+        const startTest = (name : string) => {
+            testName = name;
+            testOutput = [];
+            testFailedAtFile = '';
+            testFailedAtLine = -1;
+            testState = 'testoutput';
+        };
 
         console.log(`running tests in ${wsfolder}...`);
-        return await p.run("chialisp", ["test"], wsfolder, (_) => {
-            // No stdout handling
-        }, (line) => {
-            if (testState === "unknown") {
-                testState = 'reading_test_header';
-                testSummary = line;
-                for (var i = 0; i < testSummary.length; i++) {
-                    if (testSummary[i] !== '.') {
-                        failureNumbers.push(i);
-                    }
-                }
-            } else if (testState === "reading_test_header") {
-                if (line.startsWith("=================")) {
-                    testState = "reading_test_name";
-                } else if (line.startsWith("----------------")) {
-                    testState = "final";
-                }
-            } else if (testState === "reading_test_name") {
-                if (line.startsWith("-----------")) {
-                    testState = "reading_test_data";
-                } else {
-                    const splitLine = line.split(' ');
-                    if (splitLine.length > 1) {
-                        testName = splitLine[1].trim();
-                    } else {
-                        testName = splitLine[0].trim();
-                    }
-                    testOutput = [];
-                    testFailedAtFile = '';
-                    testFailedAtLine = -1;
-                }
-            } else if (testState === "reading_test_data") {
-                const finishTest = () => {
-                    emitState({
-                        "type": "test",
-                        "state": "failed",
-                        "file": testFailedAtFile,
-                        "line": testFailedAtLine,
-                        "message": testOutput.join("\n"),
-                        "test": testName,
-                    });
-                    passingTests[testName] = false;
-                };
-                if (line.startsWith("=============")) {
+        return await p.run("chialisp", ["test"], wsfolder, (line) => {
+            const summary = line.match(summaryRegex);
+            if (summary) {
+                if (testOutput.length > 0) {
                     finishTest();
-                    testState = "reading_test_name";
-                } else if (line.startsWith("-------------")) {
+                }
+                testState = 'tail';
+            } else if (testState === "unknown") {
+                let matched = line.match(failuresRegex);
+                if (matched) {
+                    testState = 'failures';                    
+                }
+            } else if (testState === "failures") {
+                const testHeading = line.match(testNameRegex);
+                if (testHeading) {
+                    startTest(testHeading[1]);
+                }
+            } else if (testState === "testoutput") {
+                const nextName = line.match(testNameRegex);
+                if (nextName) {
                     finishTest();
-                    testState = "final";
+                    startTest(nextName[1]);
                 } else {
-                    const matched = line.trim().match(matchFileAndLine);
-                    if (matched) {
-                        testFailedAtFile = matched[1];
-                        testFailedAtLine = parseInt(matched[2]) - 1;
-                    }
                     testOutput.push(line);
                 }
             }
+        }, (line) => {
+            console.log('stderr', line);
         }, () => {
             console.log(`Test run exited with ${p.runningProcess?.exitCode}`);
             Object.keys(passingTests).map((k) => {

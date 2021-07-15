@@ -6,8 +6,8 @@ import { isFileExists, readFile } from './utilities';
 export class ExtensionConfiguration {
     env : any | undefined;
     constructor(v : any) {
-        if (v.env) {
-            this.env = v.env;
+        if (v) {
+            this.env = v;
         } else {
             this.env = {};
         }
@@ -23,6 +23,7 @@ export async function loadExtensionConfiguration(wsfolder : vscode.WorkspaceFold
     const content = await readFile(envPath);
     try {
         const jsonContent = JSON.stringify(content);
+        console.log(jsonContent);
         return new ExtensionConfiguration(jsonContent);
     } catch(x) {
         return new ExtensionConfiguration({});
