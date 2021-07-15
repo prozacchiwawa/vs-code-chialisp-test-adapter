@@ -3,11 +3,12 @@ import { PossibleTestStates, TestAccum, TestStatesEvents } from './testtypes';
 import { ExtensionConfiguration } from './config';
 import { ProcessRunner } from './processrunner';
 import { suiteFromAccums, testIds } from './testtypes';
+import * as path from 'path';
 
 const failuresRegex = /[=]+ FAILURES [=]+/;
 const testNameRegex = /[_]+ ([^ ]+) [_]+/;
 const summaryRegex = /[=]+ short test summary info [=]+/;
-const fileAndLineRegex = /([^"]+):([0-9]+): (.*)/;
+const fileAndLineRegex = /([^:]+):([0-9]+): (.*)/;
 
 export class ChialispTestRun {
 	allTests : Array<TestAccum> = [];
@@ -54,8 +55,6 @@ export class ChialispTestRun {
     }
 
 	async run(config : ExtensionConfiguration, tests : Array<string>, emitState : (event : TestStatesEvents) => void) {
-        let testSummary = '';
-        let failureNumbers : Array<number> = [];
         let testName = '';
         let testFailedAtFile = '';
         let testFailedAtLine = -1;
@@ -89,9 +88,10 @@ export class ChialispTestRun {
         const finishTest = () => {
             if (testOutput.length > 0) {
                 const f = testOutput[testOutput.length - 1].match(fileAndLineRegex);
+                console.log(f);
                 if (f) {
-                    testFailedAtFile = f[1];
-                    testFailedAtLine = parseInt(f[2]);
+                    testFailedAtFile = path.join(this.testPath.uri.fsPath, f[1]);
+                    testFailedAtLine = parseInt(f[2]) - 1;
                 }                
             }
             const finalId = this.findTestId(testName);
