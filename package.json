@@ -1,5 +1,6 @@
 {
 	"name": "chialisp-unittest",
+	"icon": "https://github.com/prozacchiwawa/vs-code-chialisp-test-adapter/raw/main/icon.png",
 	"displayName": "chialisp-unittest",
 	"description": "Run chialisp_dev_utility unit tests",
 	"version": "0.0.1",
