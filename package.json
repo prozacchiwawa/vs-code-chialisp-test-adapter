@@ -1,6 +1,6 @@
 {
 	"name": "chialisp-unittest",
-	"icon": "https://github.com/prozacchiwawa/vs-code-chialisp-test-adapter/raw/main/icon.png",
+	"icon": "icon.png",
 	"publisher": "prozacchiwawa",
 	"repository": "https://github.com/prozacchiwawa/vs-code-chialisp-test-adapter",
 	"displayName": "chialisp-unittest",
