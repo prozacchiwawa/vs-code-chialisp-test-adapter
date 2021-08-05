@@ -49,7 +49,7 @@ export class ChialispTestAdapter implements TestAdapter {
 		let lineno = 0;
 		let accumulate : Array<TestAccum> = [];
 	
-        return await p.run("chialisp", ["test","--discover"], this.testDir.uri.fsPath, (line) => {
+        return await p.run("cdv", ["test","--discover"], this.testDir.uri.fsPath, (line) => {
 			let rawLine = captureTestLine(line);
 
 			if (rawLine) {

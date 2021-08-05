@@ -117,7 +117,7 @@ export class ChialispTestRun {
         };
 
         console.log(`running tests in ${wsfolder}...`);
-        return await p.run("chialisp", ["test"], wsfolder, (line) => {
+        return await p.run("cdv", ["test"], wsfolder, (line) => {
             const summary = line.match(summaryRegex);
             if (summary) {
                 if (testOutput.length > 0) {
